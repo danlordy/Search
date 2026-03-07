@@ -10,8 +10,11 @@ import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth/client";
 import {
   canAccessGlobalSettings,
+  canAccessTurnosModule,
+  getDefaultLandingPath,
   getUserGrade,
   getUserRole,
+  USER_ROLE_LABELS,
 } from "@/lib/auth/permissions";
 
 export function AuthControls() {
@@ -25,6 +28,8 @@ export function AuthControls() {
   const role = getUserRole(user);
   const grade = getUserGrade(user);
   const hasSettingsAccess = canAccessGlobalSettings(user);
+  const hasTurnosAccess = canAccessTurnosModule(user);
+  const landingPath = getDefaultLandingPath(user);
   const isLoginPage = pathname === "/login";
 
   const handleSignOut = async () => {
@@ -65,11 +70,21 @@ export function AuthControls() {
     <div className="flex items-center gap-2">
       <Badge variant="secondary" className="hidden md:inline-flex">
         <Shield className="mr-1 h-3 w-3" />
-        {role} · G{grade}
+        {USER_ROLE_LABELS[role]} · G{grade}
       </Badge>
-      <Button asChild variant="outline" size="sm">
-        <Link href="/dashboard">Dashboard</Link>
-      </Button>
+      {hasSettingsAccess ? (
+        <Button asChild variant="outline" size="sm">
+          <Link href="/dashboard">Dashboard</Link>
+        </Button>
+      ) : hasTurnosAccess ? (
+        <Button asChild variant="outline" size="sm">
+          <Link href="/turnos">Mi Panel</Link>
+        </Button>
+      ) : (
+        <Button asChild variant="outline" size="sm">
+          <Link href={landingPath}>Mi Panel</Link>
+        </Button>
+      )}
       {hasSettingsAccess ? <SettingsDialog /> : null}
       <Button variant="ghost" size="icon" onClick={handleSignOut} title="Cerrar sesion">
         <LogOut className="h-4 w-4" />

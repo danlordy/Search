@@ -8,6 +8,8 @@ import {
   ADMIN_ROLE,
   DEFAULT_USER_GRADE,
   DEFAULT_USER_ROLE,
+  getDefaultGradeForRole,
+  normalizeRegisterableRoleInput,
 } from "@/lib/auth/permissions";
 import * as schema from "@/lib/auth/schema";
 
@@ -35,7 +37,7 @@ export const auth = betterAuth({
       role: {
         type: "string",
         required: false,
-        input: false,
+        input: true,
         defaultValue: DEFAULT_USER_ROLE,
       },
       grade: {
@@ -52,8 +54,21 @@ export const auth = betterAuth({
         after: async (createdUser) => {
           const row = authDb.select({ total: count() }).from(schema.user).get();
           const total = Number(row?.total ?? 0);
+          const requestedRole = normalizeRegisterableRoleInput(createdUser.role);
+          const defaultGrade = getDefaultGradeForRole(requestedRole);
 
-          if (total !== 1) return;
+          if (total !== 1) {
+            authDb
+              .update(schema.user)
+              .set({
+                role: requestedRole,
+                grade: defaultGrade,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.user.id, createdUser.id))
+              .run();
+            return;
+          }
 
           authDb
             .update(schema.user)

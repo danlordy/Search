@@ -8,13 +8,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth/client";
+import {
+  REGISTERABLE_USER_ROLES,
+  USER_ROLE_LABELS,
+  getDefaultLandingPath,
+  normalizeRegisterableRoleInput,
+  type RegisterableUserRole,
+} from "@/lib/auth/permissions";
 
 type AuthMode = "login" | "register";
 
-function safeNextPath(nextValue: string | null) {
-  if (!nextValue) return "/dashboard";
-  if (!nextValue.startsWith("/") || nextValue.startsWith("//")) return "/dashboard";
-  if (nextValue.startsWith("/login")) return "/dashboard";
+function safeNextPath(nextValue: string | null, fallback: string) {
+  if (!nextValue) return fallback;
+  if (!nextValue.startsWith("/") || nextValue.startsWith("//")) return fallback;
+  if (nextValue.startsWith("/login")) return fallback;
   return nextValue;
 }
 
@@ -27,11 +34,17 @@ export function LoginForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [registerRole, setRegisterRole] = useState<RegisterableUserRole>("user");
   const [submitting, setSubmitting] = useState(false);
 
+  const defaultLandingPath = useMemo(
+    () => getDefaultLandingPath(sessionData?.user),
+    [sessionData?.user],
+  );
+
   const nextPath = useMemo(
-    () => safeNextPath(searchParams.get("next")),
-    [searchParams],
+    () => safeNextPath(searchParams.get("next"), defaultLandingPath),
+    [defaultLandingPath, searchParams],
   );
 
   useEffect(() => {
@@ -57,10 +70,12 @@ export function LoginForm() {
           throw new Error(result.error.message || "No se pudo iniciar sesion.");
         }
       } else {
+        const normalizedRole = normalizeRegisterableRoleInput(registerRole);
         const result = await authClient.signUp.email({
           name: name.trim(),
           email: email.trim(),
           password,
+          role: normalizedRole,
         });
 
         if (result?.error) {
@@ -68,7 +83,15 @@ export function LoginForm() {
         }
       }
 
-      router.replace(nextPath);
+      const registerLandingPath = getDefaultLandingPath({
+        role: registerRole,
+      });
+      const targetPath =
+        mode === "register"
+          ? safeNextPath(searchParams.get("next"), registerLandingPath)
+          : nextPath;
+
+      router.replace(targetPath);
       router.refresh();
     } catch (error) {
       console.error("Authentication failed:", error);
@@ -121,6 +144,26 @@ export function LoginForm() {
                 placeholder="Tu nombre"
                 autoComplete="name"
               />
+            </div>
+          ) : null}
+
+          {mode === "register" ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="auth-role">Perfil de acceso</Label>
+              <select
+                id="auth-role"
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={registerRole}
+                onChange={(event) =>
+                  setRegisterRole(normalizeRegisterableRoleInput(event.target.value))
+                }
+              >
+                {REGISTERABLE_USER_ROLES.map((role) => (
+                  <option key={role} value={role}>
+                    {USER_ROLE_LABELS[role]}
+                  </option>
+                ))}
+              </select>
             </div>
           ) : null}
 

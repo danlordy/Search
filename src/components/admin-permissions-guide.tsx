@@ -30,6 +30,18 @@ const ROLE_GUIDE: Record<UserRole, RoleGuide> = {
     summary: "Rol de consulta sin privilegios especiales por si solo.",
     gradeRule: "Sus permisos reales dependen del grado asignado.",
   },
+  servicio: {
+    summary: "Operador de servicio al cliente.",
+    gradeRule: "Puede gestionar tickets del modulo Servicio.",
+  },
+  caja: {
+    summary: "Operador de caja.",
+    gradeRule: "Puede gestionar tickets del modulo Caja.",
+  },
+  digitacion: {
+    summary: "Operador de digitacion.",
+    gradeRule: "Puede gestionar tickets del modulo Digitacion.",
+  },
   user: {
     summary: "Rol base para usuarios estandar.",
     gradeRule: "Sus permisos reales dependen del grado asignado.",
