@@ -92,17 +92,34 @@ export function DocumentsTable() {
   };
 
   const handleOpenFile = (ruta: string) => {
-    if (!ruta) return;
-    // create file:// url
-    const normalized = ruta.replace(/\\/g, "/");
-    let url = normalized;
-    if (!/^https?:\/\//i.test(normalized) && !/^file:\/\//i.test(normalized)) {
-      if (/^[A-Za-z]:\//.test(normalized)) url = `file:///${normalized}`;
+    const trimmed = typeof ruta === "string" ? ruta.trim() : "";
+    if (!trimmed) {
+      toast({
+        title: "No se pudo abrir",
+        description: "El documento no tiene una ruta válida.",
+        variant: "destructive",
+      });
+      return;
     }
+
+    const url = `/api/files?path=${encodeURIComponent(trimmed)}`;
+
     try {
-      window.open(url, "_blank");
+      const popup = window.open(url, "_blank", "noopener,noreferrer");
+      if (!popup) {
+        toast({
+          title: "Navegador bloqueó la apertura",
+          description: "Permite ventanas emergentes para abrir documentos en una nueva pestaña.",
+          variant: "destructive",
+        });
+      }
     } catch (e) {
       console.error("Unable to open file url:", url, e);
+      toast({
+        title: "No se pudo abrir",
+        description: "Ocurrió un error al intentar abrir el documento.",
+        variant: "destructive",
+      });
     }
   };
 

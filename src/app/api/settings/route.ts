@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
+import { auth } from "@/lib/auth/auth";
 import { getSettings, saveSettings } from "@/lib/db";
+import { canAccessGlobalSettings, getSessionUser } from "@/lib/auth/permissions";
 import { normalizeSettings, type Section } from "@/lib/settings";
 
 export const runtime = "nodejs";
@@ -42,6 +44,18 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
+    const sessionUser = getSessionUser(session);
+
+    if (!sessionUser || !canAccessGlobalSettings(sessionUser)) {
+      return NextResponse.json(
+        { error: "No tienes permisos para modificar la configuración global." },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const normalized = normalizeSettings(body);
 

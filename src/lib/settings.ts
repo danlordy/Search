@@ -21,24 +21,7 @@ export interface Settings {
 
 const SECTION_ID_PATTERN = /[^a-z0-9-_]/g;
 
-export const DEFAULT_SECTIONS: Section[] = [
-  {
-    id: "libros",
-    label: "Libros",
-    description: "Busca libros y PDFs",
-    documentsPath: "/data/documents-libros.json",
-    statsPath: "/data/search-stats-libros.json",
-    indexPaths: [],
-  },
-  {
-    id: "curriculum",
-    label: "Curriculum",
-    description: "CVs y perfiles profesionales",
-    documentsPath: "/data/documents-curriculum.json",
-    statsPath: "/data/search-stats-curriculum.json",
-    indexPaths: [],
-  },
-];
+export const DEFAULT_SECTIONS: Section[] = [];
 
 export const DEFAULT_SETTINGS: Settings = {
   indexPaths: [],

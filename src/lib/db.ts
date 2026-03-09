@@ -68,6 +68,8 @@ const DB_PATH = path.join(DB_DIR, "search.sqlite");
 const LEGACY_SETTINGS_PATH = path.join(process.cwd(), "public", "setting.json");
 const PUBLIC_DATA_DIR = path.join(process.cwd(), "public", "data");
 const LEGACY_MIGRATION_KEY = "legacy_json_migrated_v1";
+const LEGACY_SEED_SECTIONS_CLEANUP_KEY = "legacy_seed_sections_cleanup_v1";
+const LEGACY_SEED_SECTION_IDS = ["libros", "curriculum"] as const;
 
 type StoredDocument = {
   sectionId: string;
@@ -85,6 +87,23 @@ type SearchStat = {
   query: string;
   count: number;
   lastSearched: number;
+};
+
+type ListDocumentsPageOptions = {
+  sectionIdRaw?: string | null;
+  query?: string | null;
+  extensions?: string[] | null;
+  page?: number | null;
+  pageSize?: number | null;
+};
+
+type ListDocumentsPageResult = {
+  sectionId: string;
+  documents: StoredDocument[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 };
 
 type ReplaceDocumentsInput = {
@@ -203,6 +222,44 @@ function normalizeDocumentIdInput(documentId: unknown): string | null {
   return null;
 }
 
+function escapeLikeValue(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+function normalizeExtensionsInput(raw: string[] | null | undefined) {
+  if (!Array.isArray(raw)) return [];
+
+  const normalized = raw
+    .filter((item) => typeof item === "string")
+    .map((item) => item.toLowerCase().trim().replace(/^\./, ""))
+    .filter((item) => /^[a-z0-9]+$/.test(item));
+
+  return Array.from(new Set(normalized));
+}
+
+function toSafePositiveInt(value: number | null | undefined, fallback: number, max: number) {
+  if (!Number.isFinite(value)) return fallback;
+  const floored = Math.floor(value as number);
+  if (floored <= 0) return fallback;
+  return Math.min(floored, max);
+}
+
+function toSafeCount(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+  if (typeof value === "bigint") {
+    const asNumber = Number(value.toString());
+    if (Number.isFinite(asNumber)) {
+      return Math.max(0, Math.floor(asNumber));
+    }
+    return 0;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.max(0, Math.floor(parsed));
+  }
+  return 0;
+}
+
 function saveSettingsInternal(db: SQLiteDatabase, settings: Settings) {
   const payload = JSON.stringify(settings);
   db.prepare(
@@ -227,6 +284,27 @@ function getSettingsInternal(db: SQLiteDatabase): Settings {
   const parsed = parseJson(json, DEFAULT_SETTINGS);
   const normalized = normalizeSettings(parsed);
   return normalized;
+}
+
+function collectSectionIds(settings: Settings) {
+  const ids = new Set<string>();
+
+  settings.sections.forEach((section) => {
+    const sectionId = normalizeSectionId(section.id);
+    if (!sectionId) return;
+    ids.add(sectionId);
+  });
+
+  return ids;
+}
+
+function deleteSectionDataInternal(db: SQLiteDatabase, sectionIdRaw: string) {
+  const sectionId = normalizeSectionId(sectionIdRaw);
+  if (!sectionId || sectionId === "default") return;
+
+  db.prepare("DELETE FROM document_metadata WHERE section_id = ?").run(sectionId);
+  db.prepare("DELETE FROM documents WHERE section_id = ?").run(sectionId);
+  db.prepare("DELETE FROM search_stats WHERE section_id = ?").run(sectionId);
 }
 
 function mergeLegacyMetadataForDocument(
@@ -490,6 +568,59 @@ function ensureDatabaseReady(db: SQLiteDatabase) {
   if (!settingsRow?.present) {
     saveSettingsInternal(db, normalizeSettings(DEFAULT_SETTINGS));
   }
+
+  const seedCleanupDone = getMetaValue(db, LEGACY_SEED_SECTIONS_CLEANUP_KEY);
+  if (seedCleanupDone !== "true") {
+    cleanupLegacySeedSections(db);
+    setMetaValue(db, LEGACY_SEED_SECTIONS_CLEANUP_KEY, "true");
+  }
+}
+
+function cleanupLegacySeedSections(db: SQLiteDatabase) {
+  if (fs.existsSync(LEGACY_SETTINGS_PATH)) return;
+
+  const settings = getSettingsInternal(db);
+  if (!Array.isArray(settings.sections) || settings.sections.length === 0) return;
+
+  const legacySectionIds = new Set<string>(LEGACY_SEED_SECTION_IDS);
+  const hasLegacySections = settings.sections.some((section) =>
+    legacySectionIds.has(normalizeSectionId(section.id))
+  );
+  if (!hasLegacySections) return;
+
+  const hasDocumentsInLegacySections = db
+    .prepare(
+      `SELECT 1 AS present
+       FROM documents
+       WHERE section_id IN (?, ?)
+       LIMIT 1`
+    )
+    .get(LEGACY_SEED_SECTION_IDS[0], LEGACY_SEED_SECTION_IDS[1]);
+
+  if (hasDocumentsInLegacySections?.present) return;
+
+  const hasStatsInLegacySections = db
+    .prepare(
+      `SELECT 1 AS present
+       FROM search_stats
+       WHERE section_id IN (?, ?)
+       LIMIT 1`
+    )
+    .get(LEGACY_SEED_SECTION_IDS[0], LEGACY_SEED_SECTION_IDS[1]);
+
+  if (hasStatsInLegacySections?.present) return;
+
+  const cleanedSections = settings.sections.filter((section) => {
+    const sectionId = normalizeSectionId(section.id);
+    const isLegacySeedSection = legacySectionIds.has(sectionId);
+    if (!isLegacySeedSection) return true;
+
+    const hasPaths = Array.isArray(section.indexPaths) && section.indexPaths.length > 0;
+    return hasPaths;
+  });
+
+  if (cleanedSections.length === settings.sections.length) return;
+  saveSettingsInternal(db, { ...settings, sections: cleanedSections });
 }
 
 export function getDb() {
@@ -524,9 +655,60 @@ export function getSettings() {
 
 export function saveSettings(rawSettings: unknown) {
   const db = getDb();
+  const previous = getSettingsInternal(db);
   const normalized = normalizeSettings(rawSettings);
-  saveSettingsInternal(db, normalized);
+
+  const previousIds = collectSectionIds(previous);
+  const nextIds = collectSectionIds(normalized);
+  const removedSectionIds = Array.from(previousIds).filter(
+    (sectionId) => !nextIds.has(sectionId) && sectionId !== "default"
+  );
+
+  runInTransactionWithDb(db, () => {
+    saveSettingsInternal(db, normalized);
+    removedSectionIds.forEach((sectionId) => {
+      deleteSectionDataInternal(db, sectionId);
+    });
+  });
+
   return normalized;
+}
+
+function buildPathLookupCandidates(filePathRaw: string): string[] {
+  const set = new Set<string>();
+
+  const addVariants = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    set.add(trimmed);
+    set.add(trimmed.replace(/\//g, "\\"));
+    set.add(trimmed.replace(/\\/g, "/"));
+  };
+
+  addVariants(filePathRaw);
+
+  try {
+    addVariants(path.resolve(filePathRaw));
+  } catch {
+    // Ignore malformed inputs and keep raw candidates.
+  }
+
+  return Array.from(set);
+}
+
+export function isIndexedDocumentPath(filePathRaw: string) {
+  if (typeof filePathRaw !== "string" || !filePathRaw.trim()) return false;
+
+  const candidates = buildPathLookupCandidates(filePathRaw);
+  if (candidates.length === 0) return false;
+
+  const placeholders = candidates.map(() => "?").join(", ");
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT 1 AS present FROM documents WHERE ruta IN (${placeholders}) LIMIT 1`)
+    .get(...candidates);
+
+  return Boolean(row?.present);
 }
 
 function parseMetadataJson(rawJson: unknown): Record<string, unknown> {
@@ -573,6 +755,73 @@ export function listDocuments(sectionIdRaw?: string | null) {
   }
 
   return rows.map(mapDocumentRow);
+}
+
+export function listDocumentsPage(options: ListDocumentsPageOptions): ListDocumentsPageResult {
+  const db = getDb();
+  const sectionId = normalizeSectionId(options.sectionIdRaw);
+  const query = typeof options.query === "string" ? options.query.trim().toLowerCase() : "";
+  const extensions = normalizeExtensionsInput(options.extensions);
+  const pageSize = toSafePositiveInt(options.pageSize, 20, 500);
+  const requestedPage = toSafePositiveInt(options.page, 1, 100000);
+
+  const whereClauses = ["d.section_id = ?"];
+  const params: unknown[] = [sectionId];
+
+  if (query) {
+    const escaped = `%${escapeLikeValue(query)}%`;
+    whereClauses.push("(LOWER(d.nombre) LIKE ? ESCAPE '\\' OR LOWER(d.ruta) LIKE ? ESCAPE '\\')");
+    params.push(escaped, escaped);
+  }
+
+  if (extensions.length > 0) {
+    const placeholders = extensions.map(() => "?").join(", ");
+    whereClauses.push(
+      `CASE
+         WHEN instr(d.nombre, '.') > 0 THEN lower(substr(d.nombre, instr(d.nombre, '.') + 1))
+         ELSE ''
+       END IN (${placeholders})`
+    );
+    params.push(...extensions);
+  }
+
+  const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
+
+  const countRow = db
+    .prepare(
+      `SELECT COUNT(*) AS total
+       FROM documents d
+       ${whereSql}`
+    )
+    .get(...params);
+
+  const total = toSafeCount(countRow?.total);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const offset = (page - 1) * pageSize;
+
+  const rows = db
+    .prepare(
+      `SELECT d.section_id, d.id, d.nombre, d.ruta, m.metadata_json
+       FROM documents d
+       LEFT JOIN document_metadata m
+         ON m.section_id = d.section_id
+        AND m.document_id = d.id
+       ${whereSql}
+       ORDER BY d.nombre COLLATE NOCASE ASC
+       LIMIT ?
+       OFFSET ?`
+    )
+    .all(...params, pageSize, offset);
+
+  return {
+    sectionId,
+    documents: rows.map(mapDocumentRow),
+    total,
+    page,
+    pageSize,
+    totalPages,
+  };
 }
 
 export function getDocument(sectionIdRaw: string | null | undefined, documentIdRaw: unknown) {

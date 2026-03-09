@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react";
-import MiniSearch from "minisearch";
 import { useSettings, DEFAULT_SECTIONS } from "@/hooks/use-settings";
 
 export interface Document {
@@ -16,15 +15,28 @@ export interface Document {
 
 const DEFAULT_VISIBLE_EXTENSION = "pdf";
 const CUSTOM_EXTENSIONS_STORAGE_KEY = "documents_custom_extensions";
+const SEARCH_DEBOUNCE_MS = 250;
+
+type DocumentsApiResponse = {
+  documents?: Document[];
+  count?: number;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
+};
 
 export function useDocuments() {
   const { settings, isLoaded: settingsLoaded } = useSettings();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [selectedExtensions, setSelectedExtensions] = useState<string[]>([DEFAULT_VISIBLE_EXTENSION]);
   const [customExtensions, setCustomExtensions] = useState<string[]>([]);
   const [itemsPerPage, setItemsPerPage] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [filteredTotal, setFilteredTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const availableSections = useMemo(
@@ -92,73 +104,104 @@ export function useDocuments() {
   }, [availableExtensions]);
 
   useEffect(() => {
-    const fetchDocuments = async () => {
-      if (!settingsLoaded || !selectedSection) {
-        setLoading(false);
-        return;
-      }
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, SEARCH_DEBOUNCE_MS);
 
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!settingsLoaded || !selectedSection) {
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+
+    const fetchDocuments = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`/api/documents?sectionId=${encodeURIComponent(selectedSection)}`);
+        const queryParams = new URLSearchParams({
+          sectionId: selectedSection,
+          page: String(currentPage),
+          pageSize: String(itemsPerPage),
+        });
+
+        if (debouncedSearchQuery) {
+          queryParams.set("query", debouncedSearchQuery);
+        }
+
+        if (selectedExtensions.length > 0) {
+          queryParams.set("extensions", selectedExtensions.join(","));
+        }
+
+        const response = await fetch(`/api/documents?${queryParams.toString()}`, {
+          signal: controller.signal,
+        });
 
         if (!response.ok) {
           throw new Error(`Failed to load documents (${response.status})`);
         }
 
-        const data = (await response.json()) as { documents?: Document[] };
-        setDocuments(Array.isArray(data.documents) ? data.documents : []);
+        const data = (await response.json()) as DocumentsApiResponse;
+        if (!active) return;
+
+        const nextDocuments = Array.isArray(data.documents) ? data.documents : [];
+        const nextTotalRaw =
+          typeof data.total === "number" && Number.isFinite(data.total)
+            ? data.total
+            : typeof data.count === "number" && Number.isFinite(data.count)
+              ? data.count
+              : nextDocuments.length;
+        const nextTotal = Math.max(0, Math.floor(nextTotalRaw));
+        const nextTotalPagesRaw =
+          typeof data.totalPages === "number" && Number.isFinite(data.totalPages)
+            ? data.totalPages
+            : Math.ceil(nextTotal / itemsPerPage);
+        const nextTotalPages = Math.max(1, Math.floor(nextTotalPagesRaw || 1));
+        const nextPageRaw =
+          typeof data.page === "number" && Number.isFinite(data.page) ? data.page : currentPage;
+        const nextPage = Math.max(1, Math.min(nextTotalPages, Math.floor(nextPageRaw)));
+
+        setDocuments(nextDocuments);
+        setFilteredTotal(nextTotal);
+        setTotalPages(nextTotalPages);
+        if (nextPage !== currentPage) {
+          setCurrentPage(nextPage);
+        }
       } catch (error) {
+        if ((error as { name?: string })?.name === "AbortError") {
+          return;
+        }
+
+        if (!active) return;
         console.error("Error loading documents:", error);
         setDocuments([]);
+        setFilteredTotal(0);
+        setTotalPages(1);
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
     fetchDocuments();
-  }, [selectedSection, settingsLoaded]);
 
-  const miniSearch = useMemo(() => {
-    const ms = new MiniSearch({
-      fields: ["nombre", "ruta"],
-      storeFields: ["id", "nombre", "ruta", "sectionId", "precio", "metadata", "maestro", "paginas", "universidad"],
-      searchOptions: {
-        boost: { nombre: 2 },
-        fuzzy: 0.2,
-      },
-    });
-    ms.addAll(documents);
-    return ms;
-  }, [documents]);
-
-  const getFileExtension = (nombre: string) => {
-    const raw = nombre.split(".").pop()?.toLowerCase().trim() || "";
-    return raw.replace(/^\./, "");
-  };
-
-  const extensionFilteredDocuments = useMemo(() => {
-    if (selectedExtensions.length === 0) return documents;
-    return documents.filter((doc) => selectedExtensions.includes(getFileExtension(doc.nombre)));
-  }, [documents, selectedExtensions]);
-
-  const filteredDocuments = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return extensionFilteredDocuments;
-    }
-
-    const results = miniSearch.search(searchQuery);
-    const searched = results
-      .map((result) => documents.find((doc) => doc.id === result.id))
-      .filter(Boolean) as Document[];
-    return searched.filter((doc) => selectedExtensions.includes(getFileExtension(doc.nombre)));
-  }, [searchQuery, documents, miniSearch, extensionFilteredDocuments, selectedExtensions]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / itemsPerPage));
-  const paginatedDocuments = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredDocuments.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredDocuments, currentPage, itemsPerPage]);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    currentPage,
+    debouncedSearchQuery,
+    itemsPerPage,
+    selectedExtensions,
+    selectedSection,
+    settingsLoaded,
+  ]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -261,7 +304,7 @@ export function useDocuments() {
   };
 
   return {
-    documents: paginatedDocuments,
+    documents,
     allDocuments: documents,
     availableSections,
     availableExtensions,
@@ -281,7 +324,7 @@ export function useDocuments() {
     currentPage,
     handlePageChange,
     totalPages,
-    filteredTotal: filteredDocuments.length,
+    filteredTotal,
     loading,
     updateDocumentPrice,
     updateDocument,

@@ -26,7 +26,7 @@ export type SearchEntry = {
 };
 
 const STORAGE_KEY = "search_history";
-const MAX_RECENT_SEARCHES = 10;
+const MAX_RECENT_SEARCHES = 8;
 
 function hasValidDocumentId(value: unknown): value is string | number {
   if (typeof value === "number") {
@@ -140,7 +140,7 @@ export function useSearchHistory(sectionId: string = "default") {
           updated = [{ document, count: 1, lastAccessed: Date.now() }, ...prev];
         }
 
-        // Normalize and keep only top 10.
+        // Normalize and keep only top MAX_RECENT_SEARCHES.
         const sliced = normalizeEntries(updated);
         try {
           if (typeof window !== "undefined") {

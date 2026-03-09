@@ -18,7 +18,7 @@ interface RecentSearchesProps {
   sectionId?: string;
 }
 
-const MAX_TOP_ACCESSED = 5;
+const MAX_TOP_ACCESSED = 8;
 
 function getEntryKey(entry: SearchEntry): string | null {
   if (!entry || !entry.document) return null;
@@ -174,7 +174,7 @@ export function RecentSearches({
                 <p className="text-sm font-medium truncate">{entry.document.nombre}</p>
                 <p className="text-xs text-muted-foreground truncate">{entry.document.ruta}</p>
                 {getPrecioLabel(entry) && (
-                  <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-600/10 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 text-xs font-semibold">
+                  <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-semibold">
                     <Tag className="h-3 w-3" />
                     {getPrecioLabel(entry)}
                   </span>

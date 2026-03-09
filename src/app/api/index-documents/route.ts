@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import { auth } from "@/lib/auth/auth";
 import { replaceDocumentsForSection } from "@/lib/db";
+import { canAccessGlobalSettings, getSessionUser } from "@/lib/auth/permissions";
 
 export const runtime = "nodejs";
 
@@ -41,6 +43,18 @@ async function getFilesRecursive(dirPath: string): Promise<DocumentCandidate[]> 
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
+    const sessionUser = getSessionUser(session);
+
+    if (!sessionUser || !canAccessGlobalSettings(sessionUser)) {
+      return NextResponse.json(
+        { error: "No tienes permisos para indexar documentos." },
+        { status: 403 }
+      );
+    }
+
     const { indexPaths, sectionId } = await request.json();
 
     if (!indexPaths || !Array.isArray(indexPaths) || indexPaths.length === 0) {
