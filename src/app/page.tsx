@@ -1,30 +1,9 @@
-import Link from 'next/link';
+import { SearchHero } from "@/components/search-hero";
 
 export default function Home() {
   return (
-    <section className="container mx-auto px-4 py-10 md:px-6 md:py-14">
-      <div className="mx-auto max-w-4xl rounded-2xl border bg-card p-8 shadow-sm">
-        <p className="text-sm uppercase tracking-wide text-muted-foreground">CMSA</p>
-        <h1 className="mt-2 text-3xl font-bold md:text-5xl">Pagina Oficial</h1>
-        <p className="mt-4 text-base text-muted-foreground md:text-lg">
-          Bienvenido al portal principal. Desde aqui puedes entrar al buscador de libros y al cronometro.
-        </p>
-
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Link
-            href="/search"
-            className="inline-flex items-center rounded-md bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-          >
-            Ir a Busqueda de Libros
-          </Link>
-          <Link
-            href="/cronometer"
-            className="inline-flex items-center rounded-md border px-5 py-3 text-sm font-semibold transition hover:bg-accent"
-          >
-            Ir a Cronometro
-          </Link>
-        </div>
-      </div>
-    </section>
+    <div className="container mx-auto px-4 md:px-6">
+      <SearchHero />
+    </div>
   );
 }

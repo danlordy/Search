@@ -2,12 +2,14 @@ module.exports = {
   apps: [
     {
       name: "Search",
-      // En Next.js, ejecutamos el comando de npm o el binario directamente
-      script: "node_modules/next/dist/bin/next",
+      // 1. Usamos la ruta absoluta al binario de Next
+      script: "C:/inetpub/wwwroot/Search/node_modules/next/dist/bin/next",
+      // 2. Establecemos el directorio de trabajo explícitamente
+      cwd: "C:/inetpub/wwwroot/Search",
       args: "start",
-      instances: "max",       // Aprovecha todos los núcleos
-      exec_mode: "cluster",   // Recomendado para Next.js en producción
-      watch: false,           // Importante: false en Next.js
+      instances: "max",
+      exec_mode: "cluster",
+      watch: false,
       max_memory_restart: "1G",
       env: {
         NODE_ENV: "production",
@@ -15,7 +17,7 @@ module.exports = {
       },
       env_production: {
         NODE_ENV: "production",
-        PORT: 8080
+        PORT: 3000
       }
     }
   ]

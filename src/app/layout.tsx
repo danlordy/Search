@@ -7,7 +7,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Portal CMSA',
-  description: 'Portal oficial con acceso al buscador de libros y al cronometro.',
+  description: 'Portal oficial con acceso a busqueda, configuracion y documentos.',
 };
 
 export default function RootLayout({

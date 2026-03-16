@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Settings, RotateCcw, Plus, X, Zap, Upload, Sun, Moon, FolderOpen, LayoutGrid, Puzzle, UserCircle2, ChevronRight, Save, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -14,12 +14,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Settings, RotateCcw, Plus, X, Zap, Upload, Sun, Moon, FolderOpen, LayoutGrid, Puzzle, UserCircle2, ChevronRight, Save, Trash2 } from "lucide-react";
 import { useSettings, DEFAULT_SECTIONS, Section } from "@/hooks/use-settings";
 import { useTheme } from "@/hooks/use-theme";
 import { useToast } from "@/hooks/use-toast";
-import { authClient } from "@/lib/auth/client";
-import { getUserGrade, getUserRole } from "@/lib/auth/permissions";
 
 type Theme = 'light' | 'dark' | 'system';
 const SECTION_LOCAL_STORAGE_PREFIXES = ["search_history", "recent_history_panel_open"] as const;
@@ -45,20 +42,16 @@ export function SettingsDialog() {
   const [newSectionLabel, setNewSectionLabel] = useState("");
   const [newSectionDescription, setNewSectionDescription] = useState("");
   const [open, setOpen] = useState(false);
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-  const { data: sessionData } = authClient.useSession();
 
   const COMMON_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'pptx', 'txt', 'doc', 'xls', 'ppt', 'jpg', 'png', 'zip', 'rar'];
   const activeIndexSection = sections.find((section) => section.id === indexSectionId) || sections[0];
   const activeIndexPaths = activeIndexSection?.indexPaths || [];
-  const currentUserName =
-    sessionData?.user?.name && typeof sessionData.user.name === "string"
-      ? sessionData.user.name
-      : "Usuario";
-  const currentRole = getUserRole(sessionData?.user);
-  const currentGrade = getUserGrade(sessionData?.user);
+  const currentUserName = "Acceso local";
+  const currentRoleLabel = "Sin autenticacion";
 
   const normalizeSectionId = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9-_]/g, '');
   const getNormalizedSectionIds = (rows: Section[]) =>
@@ -361,7 +354,6 @@ export function SettingsDialog() {
         title: "Reinicio",
         description: "La configuración ha sido reiniciada a los valores por defecto",
       });
-      setOpen(false);
     } catch (error) {
       toast({
         title: "Error",
@@ -421,31 +413,30 @@ export function SettingsDialog() {
     }
   };
 
-  const handleOpenChange = (newOpen: boolean) => {
-    if (newOpen && isLoaded) {
-      setAppTitle(settings.appTitle || "Buscador de Archivos");
-      setAppSubtitle(settings.appSubtitle || "Encuentra tus archivos locales al instante");
-      setLogoUrl(settings.logoUrl || "");
-      setShowAppTitle(settings.showAppTitle ?? true);
-      setShowAppSubtitle(settings.showAppSubtitle ?? true);
-      setFileExtensions(settings.fileExtensions || ['pdf', 'docx']);
-      const loadedSections = settings.sections && settings.sections.length ? settings.sections : DEFAULT_SECTIONS;
-      setSections(loadedSections.map((section) => ({
-        ...section,
-        indexPaths: section.indexPaths || [],
-      })));
-      setBaselineSectionIds(getNormalizedSectionIds(loadedSections));
-      setIndexSectionId(loadedSections[0]?.id || "");
-      setDuplicateFromSectionId("");
-      setNewSectionId("");
-      setNewSectionLabel("");
-      setNewSectionDescription("");
-      setSelectedTheme((localStorage.getItem('file-finder-theme') as Theme) || 'system');
-      setNewPath("");
-      setNewExtension("");
-    }
-    setOpen(newOpen);
-  };
+  useEffect(() => {
+    if (!isLoaded || hasInitialized) return;
+    setAppTitle(settings.appTitle || "Buscador de Archivos");
+    setAppSubtitle(settings.appSubtitle || "Encuentra tus archivos locales al instante");
+    setLogoUrl(settings.logoUrl || "");
+    setShowAppTitle(settings.showAppTitle ?? true);
+    setShowAppSubtitle(settings.showAppSubtitle ?? true);
+    setFileExtensions(settings.fileExtensions || ['pdf', 'docx']);
+    const loadedSections = settings.sections && settings.sections.length ? settings.sections : DEFAULT_SECTIONS;
+    setSections(loadedSections.map((section) => ({
+      ...section,
+      indexPaths: section.indexPaths || [],
+    })));
+    setBaselineSectionIds(getNormalizedSectionIds(loadedSections));
+    setIndexSectionId(loadedSections[0]?.id || "");
+    setDuplicateFromSectionId("");
+    setNewSectionId("");
+    setNewSectionLabel("");
+    setNewSectionDescription("");
+    setSelectedTheme((localStorage.getItem('file-finder-theme') as Theme) || 'system');
+    setNewPath("");
+    setNewExtension("");
+    setHasInitialized(true);
+  }, [isLoaded, hasInitialized, settings]);
 
   const handleToggleTheme = () => {
     const current = theme || selectedTheme || 'system';
@@ -454,25 +445,28 @@ export function SettingsDialog() {
     updateTheme(next);
   };
 
-  if (!isLoaded) {
-    return null;
+  if (!isLoaded || !hasInitialized) {
+    return (
+      <Button variant="outline" size="icon" title="Configuracion" aria-label="Configuracion" disabled>
+        <Settings className="h-4 w-4" />
+      </Button>
+    );
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="icon" title="Configuración">
+        <Button variant="outline" size="icon" title="Configuracion" aria-label="Configuracion">
           <Settings className="h-4 w-4" />
         </Button>
       </DialogTrigger>
       <DialogContent className="w-[96vw] max-w-[1200px] h-[90vh] p-0 overflow-hidden gap-0 border-border bg-card/95 backdrop-blur-xl">
         <DialogHeader className="sr-only">
-          <DialogTitle>Configuración</DialogTitle>
+          <DialogTitle>Configuracion</DialogTitle>
           <DialogDescription>
-            Configura las rutas de indexación y ajustes de la aplicación.
+            Configura las rutas de indexacion y ajustes de la aplicacion.
           </DialogDescription>
         </DialogHeader>
-
         <div className="grid h-full min-h-0 md:grid-cols-[256px_1fr] bg-background/70">
           <aside className="hidden md:flex border-r border-border bg-card/80 flex-col">
             <div className="p-6">
@@ -509,7 +503,7 @@ export function SettingsDialog() {
                 <div className="flex flex-col">
                   <span className="text-sm font-semibold">{currentUserName}</span>
                   <span className="text-xs text-muted-foreground">
-                    {currentRole} · G{currentGrade}
+                    {currentRoleLabel}
                   </span>
                 </div>
               </div>
@@ -531,14 +525,6 @@ export function SettingsDialog() {
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 <span className="font-semibold">General & Branding</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                title="Cerrar"
-              >
-                <X className="h-5 w-5" />
-              </button>
             </header>
 
             <div className="flex-1 overflow-y-auto p-8 space-y-10 pb-32">

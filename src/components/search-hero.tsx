@@ -14,8 +14,6 @@ import { useSearchHistory } from "@/hooks/use-search-history";
 import { RecentSearches } from "@/components/recent-searches";
 import { DocumentDetailsDialog } from "@/components/document-details-dialog";
 import { DocumentMetadataEditor } from "@/components/document-metadata-editor";
-import { authClient } from "@/lib/auth/client";
-import { canAccessGlobalSettings } from "@/lib/auth/permissions";
 
 type DocumentMetadata = {
   maestro?: string;
@@ -65,7 +63,6 @@ export function SearchHero() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { settings, isLoaded, updateSettings } = useSettings();
-  const { data: sessionData, isPending: isSessionPending } = authClient.useSession();
   const sections = settings.sections?.length ? settings.sections : DEFAULT_SECTIONS;
   const [activeSectionId, setActiveSectionId] = useState(sections[0]?.id ?? 'default');
   const activeSection = sections.find((section) => section.id === activeSectionId) || sections[0];
@@ -81,8 +78,7 @@ export function SearchHero() {
   const isPageLoading = !isLoaded || isIndexing || !historyLoaded || !activeSectionId;
   const shouldRenderHistoryPanel = historyLoaded && recentSearches.length > 0;
   const shouldReserveHistorySpace = shouldRenderHistoryPanel && isHistoryPanelOpen;
-  const canManageGlobalSettings =
-    !isSessionPending && canAccessGlobalSettings(sessionData?.user);
+  const canManageGlobalSettings = true;
 
   const miniSearch = useRef<MiniSearch<Document>>(
     new MiniSearch({
@@ -225,15 +221,6 @@ export function SearchHero() {
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!canManageGlobalSettings) {
-      toast({
-        title: "Permiso requerido",
-        description: "Necesitas permisos globales para cambiar el logo.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -288,15 +275,6 @@ export function SearchHero() {
   };
 
   const handleRemoveLogo = async () => {
-    if (!canManageGlobalSettings) {
-      toast({
-        title: "Permiso requerido",
-        description: "Necesitas permisos globales para cambiar el logo.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setLogoUrl("");
     setShowLogoUpload(false);
     
@@ -717,11 +695,10 @@ export function SearchHero() {
                       Para comenzar, debes:
                     </p>
                     <ul className="text-muted-foreground text-xs space-y-1">
-                      <li>1. Iniciar sesión con un usuario con permisos globales</li>
-                      <li>2. Acceder a Configuración (ícono de engranaje)</li>
-                      <li>3. Crear una nueva sección</li>
-                      <li>4. Agregar rutas de búsqueda a la sección</li>
-                      <li>5. Indexar los documentos</li>
+                      <li>1. Abrir Configuracion</li>
+                      <li>2. Crear una nueva seccion</li>
+                      <li>3. Agregar rutas de busqueda a la seccion</li>
+                      <li>4. Indexar los documentos</li>
                     </ul>
                   </div>
                 </div>
@@ -736,8 +713,7 @@ export function SearchHero() {
                       Para agregar documentos, puede:
                     </p>
                     <ul className="text-muted-foreground text-xs space-y-1">
-                      <li>• Iniciar sesión para editar configuración global</li>
-                      <li>• Agregar rutas de búsqueda en Configuración</li>
+                      <li>• Abrir Configuracion y agregar rutas de busqueda</li>
                       <li>• Indexar los documentos</li>
                       <li>• Usar las APIs para sincronizar datos</li>
                     </ul>
